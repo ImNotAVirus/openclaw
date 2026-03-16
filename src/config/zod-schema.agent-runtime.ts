@@ -439,15 +439,46 @@ const ToolExecBaseShape = {
   applyPatch: ToolExecApplyPatchSchema,
 } as const;
 
-const AgentToolExecSchema = z
-  .object({
-    ...ToolExecBaseShape,
-    approvalRunningNoticeMs: z.number().int().nonnegative().optional(),
-  })
-  .strict()
-  .optional();
+function addAllowedHostsRefinement<T extends z.ZodObject<typeof ToolExecBaseShape>>(schema: T) {
+  return schema.superRefine((val, ctx) => {
+    if (!val.allowedHosts) {
+      return;
+    }
+    const base = val.host ?? "sandbox";
+    if (base === "sandbox" && val.allowedHosts.some((h) => h !== "sandbox")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["allowedHosts"],
+        message: "allowedHosts cannot include less-isolated hosts when host=sandbox",
+      });
+    }
+    if (base === "gateway" && val.allowedHosts.includes("node")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["allowedHosts"],
+        message: 'allowedHosts cannot include "node" when host=gateway',
+      });
+    }
+    if (base === "node" && val.allowedHosts.some((h) => h !== "node")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["allowedHosts"],
+        message: 'allowedHosts can only include "node" when host=node',
+      });
+    }
+  });
+}
 
-const ToolExecSchema = z.object(ToolExecBaseShape).strict().optional();
+const AgentToolExecSchema = addAllowedHostsRefinement(
+  z
+    .object({
+      ...ToolExecBaseShape,
+      approvalRunningNoticeMs: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
+).optional();
+
+const ToolExecSchema = addAllowedHostsRefinement(z.object(ToolExecBaseShape).strict()).optional();
 
 const ToolFsSchema = z
   .object({
