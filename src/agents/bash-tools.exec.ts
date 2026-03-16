@@ -456,7 +456,7 @@ export function createExecTool(
         });
       }
 
-      if (host === "gateway" && !bypassApprovals) {
+      if ((host === "gateway" || host === "sandbox") && !bypassApprovals) {
         const gatewayResult = await processGatewayAllowlist({
           command: params.command,
           workdir,
@@ -466,6 +466,7 @@ export function createExecTool(
           defaultTimeoutSec,
           security,
           ask,
+          host,
           safeBins,
           safeBinProfiles,
           agentId,
