@@ -583,8 +583,18 @@ export function resolveExecApprovalsFromFile(params: {
     ),
   };
   // Resolve flat allowlist (legacy path: wildcard + agent array entries merged).
-  const wildcardFlatList = Array.isArray(wildcard.allowlist) ? wildcard.allowlist : [];
-  const agentFlatList = Array.isArray(agent.allowlist) ? agent.allowlist : [];
+  // For map-format allowlists, use the "default" bucket as the flat fallback so that
+  // legacy consumers (node-host allowlist checks) still see the applicable entries.
+  const wildcardFlatList = Array.isArray(wildcard.allowlist)
+    ? wildcard.allowlist
+    : isAllowlistByHost(wildcard.allowlist)
+      ? (wildcard.allowlist["default"] ?? [])
+      : [];
+  const agentFlatList = Array.isArray(agent.allowlist)
+    ? agent.allowlist
+    : isAllowlistByHost(agent.allowlist)
+      ? (agent.allowlist["default"] ?? [])
+      : [];
   const allowlist = [...wildcardFlatList, ...agentFlatList];
 
   // Resolve per-host allowlist map (new format).
@@ -599,7 +609,9 @@ export function resolveExecApprovalsFromFile(params: {
     ]);
     allowlistByHost = {};
     for (const hostKey of mergedHosts) {
-      const wildcardEntries = wildcardByHost?.[hostKey] ?? wildcardFlatList;
+      // For map-format wildcard: fall back to the wildcard "default" bucket, then to the flat list.
+      const wildcardEntries =
+        wildcardByHost?.[hostKey] ?? wildcardByHost?.["default"] ?? wildcardFlatList;
       const agentEntries = agentByHost?.[hostKey] ?? [];
       const seen = new Set<string>();
       const merged: ExecAllowlistEntry[] = [];
@@ -665,10 +677,14 @@ export function recordAllowlistUse(
         }
       : item;
 
-  if (isAllowlistByHost(existing.allowlist) && host) {
+  if (isAllowlistByHost(existing.allowlist)) {
+    if (!host) {
+      // No host provided — cannot safely update a per-host map. Skip to avoid corruption.
+      return;
+    }
     // Per-host map: update the specific host bucket (or "default" fallback).
     const byHost = existing.allowlist;
-    const bucket = host && byHost[host] ? host : "default";
+    const bucket = byHost[host] !== undefined ? host : "default";
     const entries = byHost[bucket] ?? [];
     agents[target] = {
       ...existing,
@@ -702,17 +718,20 @@ export function addAllowlistEntry(
     lastUsedAt: Date.now(),
   };
 
-  if (isAllowlistByHost(existing.allowlist) && host) {
+  if (isAllowlistByHost(existing.allowlist)) {
+    if (!host) {
+      // No host provided — cannot safely add to a per-host map. Skip to avoid corruption.
+      return;
+    }
     // Per-host map: add to the specific host bucket.
     const byHost = existing.allowlist;
-    const bucket = host;
-    const entries = byHost[bucket] ?? [];
+    const entries = byHost[host] ?? [];
     if (entries.some((e) => e.pattern === trimmed)) {
       return;
     }
     agents[target] = {
       ...existing,
-      allowlist: { ...byHost, [bucket]: [...entries, newEntry] },
+      allowlist: { ...byHost, [host]: [...entries, newEntry] },
     };
   } else {
     const allowlist = Array.isArray(existing.allowlist) ? existing.allowlist : [];

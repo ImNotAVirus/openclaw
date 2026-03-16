@@ -311,3 +311,106 @@ describe("mergeLegacyAgent preserves map format", () => {
     expect(map["sandbox"]).toBeDefined();
   });
 });
+
+describe("addAllowlistEntry safety — no host with map format", () => {
+  it("does not corrupt per-host map when host is omitted", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+          },
+        },
+      },
+    };
+    // No host — should be a no-op, not corrupt the map
+    addAllowlistEntry(file, "myagent", "/usr/bin/new-tool");
+    const al = file.agents?.myagent?.allowlist;
+    expect(typeof al === "object" && !Array.isArray(al)).toBe(true);
+    const map = al as Record<string, { pattern: string }[]>;
+    expect(map["gateway"]).toHaveLength(1);
+    expect(map["gateway"][0].pattern).toBe("/usr/bin/gh");
+    // New tool should NOT have been added
+    expect(JSON.stringify(map)).not.toContain("new-tool");
+  });
+});
+
+describe("recordAllowlistUse safety — no host with map format", () => {
+  it("does not corrupt per-host map when host is omitted", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh", lastUsedAt: 0 }],
+          },
+        },
+      },
+    };
+    // No host — should be a no-op
+    recordAllowlistUse(file, "myagent", { id: "g1", pattern: "/usr/bin/gh" }, "gh status");
+    const al = file.agents?.myagent?.allowlist;
+    expect(typeof al === "object" && !Array.isArray(al)).toBe(true);
+    const map = al as Record<string, { pattern: string; lastUsedCommand?: string }[]>;
+    // Entry should NOT have been updated (no host = skipped)
+    expect(map["gateway"][0].lastUsedCommand).toBeUndefined();
+  });
+});
+
+describe("flat allowlist includes map default bucket for legacy consumers", () => {
+  it("resolvedApprovals.allowlist includes 'default' bucket entries when agent uses map format", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        "node-agent": {
+          allowlist: {
+            default: [{ id: "d1", pattern: "/usr/bin/curl" }],
+            node: [{ id: "n1", pattern: "/usr/bin/special" }],
+          },
+        },
+      },
+    };
+    const resolved = resolveExecApprovalsFromFile({
+      file,
+      agentId: "node-agent",
+      path: "/tmp/test.json",
+      socketPath: "/tmp/test.sock",
+      token: "test-token",
+    });
+    // Flat allowlist should include the "default" bucket for legacy node-host consumers
+    expect(resolved.allowlist.map((e) => e.pattern)).toContain("/usr/bin/curl");
+  });
+});
+
+describe("wildcard map default entries merged into host buckets", () => {
+  it("includes wildcard 'default' bucket in host resolution when wildcard uses map format", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        "*": {
+          allowlist: {
+            default: [{ id: "wd1", pattern: "/usr/bin/env" }],
+            gateway: [{ id: "wg1", pattern: "/usr/bin/curl" }],
+          },
+        },
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+          },
+        },
+      },
+    };
+    const resolved = resolveExecApprovalsFromFile({
+      file,
+      agentId: "myagent",
+      path: "/tmp/test.json",
+      socketPath: "/tmp/test.sock",
+      token: "test-token",
+    });
+    const gatewayList = resolveAllowlistForHost(resolved, "gateway");
+    // Should include wildcard "default" entries in gateway bucket
+    expect(gatewayList.map((e) => e.pattern)).toContain("/usr/bin/env");
+    expect(gatewayList.map((e) => e.pattern)).toContain("/usr/bin/gh");
+  });
+});
