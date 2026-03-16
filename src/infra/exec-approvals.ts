@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { logWarn } from "../logger.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import { expandHomePrefix } from "./home-dir.js";
 import { requestJsonlSocket } from "./jsonl-socket.js";
@@ -217,10 +218,12 @@ function mergeLegacyAgent(
     seen.add(key);
     allowlist.push(entry);
   };
-  for (const entry of current.allowlist ?? []) {
+  const currentEntries = Array.isArray(current.allowlist) ? current.allowlist : [];
+  const legacyEntries = Array.isArray(legacy.allowlist) ? legacy.allowlist : [];
+  for (const entry of currentEntries) {
     pushEntry(entry);
   }
-  for (const entry of legacy.allowlist ?? []) {
+  for (const entry of legacyEntries) {
     pushEntry(entry);
   }
 
@@ -335,6 +338,11 @@ export function normalizeExecApprovals(file: ExecApprovalsFile): ExecApprovalsFi
       }
     } else {
       // Legacy array format (or undefined): normalize as flat list.
+      if (Array.isArray(agent.allowlist)) {
+        logWarn(
+          `exec-approvals: agent "${key}" uses legacy array allowlist format — run "openclaw doctor" to migrate`,
+        );
+      }
       const coerced = coerceAllowlistEntries(agent.allowlist);
       const allowlist = ensureAllowlistIds(coerced);
       if (allowlist !== agent.allowlist) {
