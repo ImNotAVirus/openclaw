@@ -423,6 +423,7 @@ const ToolExecSafeBinProfileSchema = z
 
 const ToolExecBaseShape = {
   host: z.enum(["sandbox", "gateway", "node"]).optional(),
+  allowedHosts: z.array(z.enum(["sandbox", "gateway", "node"])).optional(),
   security: z.enum(["deny", "allowlist", "full"]).optional(),
   ask: z.enum(["off", "on-miss", "always"]).optional(),
   node: z.string().optional(),

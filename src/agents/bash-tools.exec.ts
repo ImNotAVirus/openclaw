@@ -309,13 +309,37 @@ export function createExecTool(
       const requestedHost = normalizeExecHost(params.host) ?? null;
       let host: ExecHost = requestedHost ?? configuredHost;
       if (!elevatedRequested && requestedHost && requestedHost !== configuredHost) {
-        // Allow agents to opt into a more isolated host than the configured default.
-        // Specifically: gateway → sandbox is permitted (sandbox is stricter, not an escape).
-        // The reverse (sandbox → gateway) is blocked: that would be a container escape.
-        // Node is excluded from this hierarchy — it is a separate topology concern.
-        const sandboxOverrideAllowed =
-          configuredHost === "gateway" && requestedHost === "sandbox";
-        if (!sandboxOverrideAllowed) {
+        // tools.exec.allowedHosts: optional explicit allowlist of hosts the agent may request.
+        // When absent, only the configured host is allowed (backward-compatible).
+        // Validation rules enforced at runtime (schema validation catches config errors at load):
+        //   host=sandbox → allowedHosts must not include "gateway" or "node" (container escape)
+        //   host=gateway → allowedHosts must not include "node" (unknown trust boundary)
+        //   host=node    → allowedHosts may only include "node"
+        const allowedHosts = defaults?.allowedHosts;
+        if (allowedHosts) {
+          // Guard against misconfigured allowedHosts that would permit privilege escalation.
+          if (configuredHost === "sandbox" && allowedHosts.some((h) => h !== "sandbox")) {
+            throw new Error(
+              `exec: tools.exec.allowedHosts cannot include less-isolated hosts when host=sandbox (container escape prevention).`,
+            );
+          }
+          if (configuredHost === "gateway" && allowedHosts.some((h) => h === "node")) {
+            throw new Error(
+              `exec: tools.exec.allowedHosts cannot include "node" when host=gateway (unknown trust boundary).`,
+            );
+          }
+          if (configuredHost === "node" && allowedHosts.some((h) => h !== "node")) {
+            throw new Error(
+              `exec: tools.exec.allowedHosts can only include "node" when host=node.`,
+            );
+          }
+          if (!allowedHosts.includes(requestedHost)) {
+            throw new Error(
+              `exec host not allowed (requested ${renderExecHostLabel(requestedHost)}; ` +
+                `add to tools.exec.allowedHosts to allow).`,
+            );
+          }
+        } else {
           throw new Error(
             `exec host not allowed (requested ${renderExecHostLabel(requestedHost)}; ` +
               `configure tools.exec.host=${renderExecHostLabel(configuredHost)} to allow).`,
