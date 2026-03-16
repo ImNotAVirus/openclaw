@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  addAllowlistEntry,
+  recordAllowlistUse,
   resolveAllowlistForHost,
   resolveExecApprovalsFromFile,
+  normalizeExecApprovals,
   type ExecApprovalsFile,
 } from "./exec-approvals.js";
 
@@ -149,6 +152,37 @@ describe("per-host allowlists (exec-approvals)", () => {
     });
   });
 
+  describe("empty bucket does not fall back to default", () => {
+    it("returns empty array when host bucket is explicitly empty (not null/undefined)", () => {
+      const file: ExecApprovalsFile = {
+        ...BASE_FILE,
+        agents: {
+          "main-agent": {
+            allowlist: {
+              gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+              sandbox: [],
+            },
+          },
+        },
+      };
+      const resolved = resolveExecApprovalsFromFile({
+        file,
+        agentId: "main-agent",
+        path: "/tmp/test.json",
+        socketPath: "/tmp/test.sock",
+        token: "test-token",
+      });
+
+      // sandbox bucket exists but is empty — should NOT fall back to gateway or default
+      const sandboxList = resolveAllowlistForHost(resolved, "sandbox");
+      expect(sandboxList).toHaveLength(0);
+
+      // gateway bucket should still work
+      const gatewayList = resolveAllowlistForHost(resolved, "gateway");
+      expect(gatewayList).toHaveLength(1);
+    });
+  });
+
   describe("wildcard agent entries", () => {
     it("merges wildcard flat entries into per-host resolution", () => {
       const file: ExecApprovalsFile = {
@@ -178,5 +212,102 @@ describe("per-host allowlists (exec-approvals)", () => {
       expect(gatewayList.map((e) => e.pattern)).toContain("/usr/bin/env");
       expect(gatewayList.map((e) => e.pattern)).toContain("/usr/bin/gh");
     });
+  });
+});
+
+describe("addAllowlistEntry with per-host map format", () => {
+  it("adds entry to the correct host bucket", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+            sandbox: [],
+          },
+        },
+      },
+    };
+    addAllowlistEntry(file, "myagent", "/usr/bin/curl", "gateway");
+    const al = file.agents?.myagent?.allowlist as Record<string, { pattern: string }[]>;
+    expect(al["gateway"].map((e) => e.pattern)).toContain("/usr/bin/curl");
+    expect(al["sandbox"]).toHaveLength(0);
+  });
+
+  it("does not overwrite the per-host map when host is undefined", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+          },
+        },
+      },
+    };
+    // No host passed — should not corrupt the map
+    addAllowlistEntry(file, "myagent", "/usr/bin/curl");
+    const al = file.agents?.myagent?.allowlist;
+    // Map format should still be intact
+    expect(typeof al === "object" && !Array.isArray(al)).toBe(true);
+    const map = al as Record<string, { pattern: string }[]>;
+    expect(map["gateway"].map((e) => e.pattern)).toContain("/usr/bin/gh");
+  });
+});
+
+describe("recordAllowlistUse with per-host map format", () => {
+  it("updates the correct host bucket", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh", lastUsedAt: 0 }],
+            sandbox: [{ id: "s1", pattern: "python3", lastUsedAt: 0 }],
+          },
+        },
+      },
+    };
+    recordAllowlistUse(
+      file,
+      "myagent",
+      { id: "g1", pattern: "/usr/bin/gh" },
+      "gh auth status",
+      "/usr/bin/gh",
+      "gateway",
+    );
+    const map = file.agents?.myagent?.allowlist as Record<string, { pattern: string; lastUsedCommand?: string }[]>;
+    expect(map["gateway"][0].lastUsedCommand).toBe("gh auth status");
+    // sandbox bucket should be untouched
+    expect(map["sandbox"][0].lastUsedCommand).toBeUndefined();
+  });
+});
+
+describe("mergeLegacyAgent preserves map format", () => {
+  it("does not drop map data when current uses map format and legacy is array", () => {
+    const file: ExecApprovalsFile = {
+      ...BASE_FILE,
+      agents: {
+        default: {
+          allowlist: [{ id: "legacy1", pattern: "/usr/bin/legacy" }],
+        },
+        myagent: {
+          allowlist: {
+            gateway: [{ id: "g1", pattern: "/usr/bin/gh" }],
+            sandbox: [{ pattern: "*" }],
+          },
+        },
+      },
+    };
+    const normalized = normalizeExecApprovals(file);
+    const agent = normalized.agents?.myagent;
+    const al = agent?.allowlist;
+    // Should still be map format
+    expect(typeof al === "object" && !Array.isArray(al)).toBe(true);
+    const map = al as Record<string, { pattern: string }[]>;
+    // gateway bucket preserved
+    expect(map["gateway"].map((e) => e.pattern)).toContain("/usr/bin/gh");
+    // sandbox bucket preserved
+    expect(map["sandbox"]).toBeDefined();
   });
 });

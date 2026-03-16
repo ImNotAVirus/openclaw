@@ -171,7 +171,13 @@ export function resolveAllowlistForHost(
   host: ExecHost,
 ): ExecAllowlistEntry[] {
   if (resolved.allowlistByHost) {
-    return resolved.allowlistByHost[host] ?? resolved.allowlistByHost["default"] ?? [];
+    // Use explicit undefined check: an empty array [] is a valid explicit bucket
+    // and should NOT fall back to "default". Only absent keys fall back.
+    const hostBucket = resolved.allowlistByHost[host];
+    if (hostBucket !== undefined) {
+      return hostBucket;
+    }
+    return resolved.allowlistByHost["default"] ?? [];
   }
   return resolved.allowlist;
 }
@@ -220,6 +226,38 @@ function mergeLegacyAgent(
     seen.add(key);
     allowlist.push(entry);
   };
+  // If current already uses map format, preserve it — merge legacy flat entries into "default".
+  if (isAllowlistByHost(current.allowlist)) {
+    const legacyEntries = Array.isArray(legacy.allowlist) ? legacy.allowlist : [];
+    if (legacyEntries.length === 0) {
+      return {
+        security: current.security ?? legacy.security,
+        ask: current.ask ?? legacy.ask,
+        askFallback: current.askFallback ?? legacy.askFallback,
+        autoAllowSkills: current.autoAllowSkills ?? legacy.autoAllowSkills,
+        allowlist: current.allowlist,
+      };
+    }
+    const byHost = { ...current.allowlist };
+    const defaultBucket = byHost["default"] ?? [];
+    const seen = new Set(defaultBucket.map((e) => normalizeAllowlistPattern(e.pattern)));
+    const merged = [...defaultBucket];
+    for (const entry of legacyEntries) {
+      const key = normalizeAllowlistPattern(entry.pattern);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        merged.push(entry);
+      }
+    }
+    return {
+      security: current.security ?? legacy.security,
+      ask: current.ask ?? legacy.ask,
+      askFallback: current.askFallback ?? legacy.askFallback,
+      autoAllowSkills: current.autoAllowSkills ?? legacy.autoAllowSkills,
+      allowlist: { ...byHost, default: merged },
+    };
+  }
+
   const currentEntries = Array.isArray(current.allowlist) ? current.allowlist : [];
   const legacyEntries = Array.isArray(legacy.allowlist) ? legacy.allowlist : [];
   for (const entry of currentEntries) {
