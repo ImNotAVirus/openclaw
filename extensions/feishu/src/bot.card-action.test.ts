@@ -364,4 +364,40 @@ describe("Feishu Card Action Handler", () => {
 
     expect(handleFeishuMessage).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps an in-flight token claimed while a slow dispatch is still running", async () => {
+    vi.useFakeTimers();
+    const event: FeishuCardActionEvent = {
+      operator: { open_id: "u123", user_id: "uid1", union_id: "un1" },
+      token: "tok12",
+      action: {
+        value: createFeishuCardInteractionEnvelope({
+          k: "quick",
+          a: "feishu.quick_actions.help",
+          q: "/help",
+          c: { u: "u123", h: "chat1", t: "group", e: Date.now() + 60_000 },
+        }),
+        tag: "button",
+      },
+      context: { open_id: "u123", user_id: "uid1", chat_id: "chat1" },
+    };
+
+    let resolveDispatch: (() => void) | undefined;
+    vi.mocked(handleFeishuMessage).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDispatch = resolve;
+        }) as never,
+    );
+
+    const first = handleFeishuCardAction({ cfg, event, runtime });
+    await vi.advanceTimersByTimeAsync(61_000);
+    await handleFeishuCardAction({ cfg, event, runtime });
+
+    expect(handleFeishuMessage).toHaveBeenCalledTimes(1);
+
+    resolveDispatch?.();
+    await first;
+    vi.useRealTimers();
+  });
 });

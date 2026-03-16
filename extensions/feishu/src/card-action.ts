@@ -63,7 +63,10 @@ function beginFeishuCardActionToken(params: {
   if (existing && existing.expiresAt > now) {
     return false;
   }
-  processedCardActionTokens.set(key, { status: "inflight", expiresAt: now + 60_000 });
+  processedCardActionTokens.set(key, {
+    status: "inflight",
+    expiresAt: now + FEISHU_CARD_ACTION_TOKEN_TTL_MS,
+  });
   return true;
 }
 
