@@ -6,11 +6,13 @@ import {
   listKnownProfileNames,
 } from "./server-context.js";
 
-export async function ensureExtensionRelayForProfiles(params: {
+export async function ensureExtensionRelayForProfiles(_params: {
   resolved: ResolvedBrowserConfig;
   onWarn: (message: string) => void;
 }) {
-  void params;
+  // Intentional no-op: the Chrome extension relay path has been removed.
+  // runtime-lifecycle still calls this helper, so keep the stub until the next
+  // breaking cleanup rather than changing the call graph in a patch release.
 }
 
 export async function stopKnownBrowserProfiles(params: {

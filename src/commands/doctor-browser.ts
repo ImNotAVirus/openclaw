@@ -35,7 +35,7 @@ function collectChromeMcpProfileNames(cfg: OpenClawConfig): string[] {
   for (const [profileName, rawProfile] of Object.entries(profiles)) {
     const profile = asRecord(rawProfile);
     const driver = typeof profile?.driver === "string" ? profile.driver.trim() : "";
-    if (driver === "existing-session" || driver === "extension") {
+    if (driver === "existing-session") {
       names.add(profileName);
     }
   }
