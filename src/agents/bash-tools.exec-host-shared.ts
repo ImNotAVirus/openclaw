@@ -338,7 +338,7 @@ export async function sendExecApprovalFollowupResult(
 }
 
 export function buildExecApprovalPendingToolResult(params: {
-  host: "gateway" | "node";
+  host: "gateway" | "node" | "sandbox";
   command: string;
   cwd: string;
   warningText: string;
