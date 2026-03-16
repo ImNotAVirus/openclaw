@@ -309,10 +309,18 @@ export function createExecTool(
       const requestedHost = normalizeExecHost(params.host) ?? null;
       let host: ExecHost = requestedHost ?? configuredHost;
       if (!elevatedRequested && requestedHost && requestedHost !== configuredHost) {
-        throw new Error(
-          `exec host not allowed (requested ${renderExecHostLabel(requestedHost)}; ` +
-            `configure tools.exec.host=${renderExecHostLabel(configuredHost)} to allow).`,
-        );
+        // Allow agents to opt into a more isolated host than the configured default.
+        // Specifically: gateway → sandbox is permitted (sandbox is stricter, not an escape).
+        // The reverse (sandbox → gateway) is blocked: that would be a container escape.
+        // Node is excluded from this hierarchy — it is a separate topology concern.
+        const sandboxOverrideAllowed =
+          configuredHost === "gateway" && requestedHost === "sandbox";
+        if (!sandboxOverrideAllowed) {
+          throw new Error(
+            `exec host not allowed (requested ${renderExecHostLabel(requestedHost)}; ` +
+              `configure tools.exec.host=${renderExecHostLabel(configuredHost)} to allow).`,
+          );
+        }
       }
       if (elevatedRequested) {
         host = "gateway";
