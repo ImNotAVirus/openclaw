@@ -1865,7 +1865,7 @@ Controls elevated (host) exec access:
 
 #### `tools.exec.allowedHosts`
 
-The optional `allowedHosts` field lets an agent opt into a more isolated exec host at runtime (e.g. `sandbox`) while remaining configured with a more permissive default (e.g. `gateway`). When absent, only the configured `host` is allowed (backward-compatible).
+The optional `allowedHosts` field lets an agent opt into a more isolated exec host at runtime (e.g. `sandbox`) while remaining configured with a more permissive default (e.g. `gateway`). When absent, only the configured `host` is allowed.
 
 ```json5
 {
@@ -1880,14 +1880,14 @@ The optional `allowedHosts` field lets an agent opt into a more isolated exec ho
 }
 ```
 
-**Validation rules** (enforced at config-load time):
+**Validation rules:**
 
 - `host` must be the most permissive host in `allowedHosts` — you can always go more isolated, never less.
 - `host: "sandbox"` → `allowedHosts` must not include `"gateway"` or `"node"` (container escape).
 - `host: "gateway"` → `allowedHosts` must not include `"node"` (unknown trust boundary).
 - `host: "node"` → `allowedHosts` may only include `"node"`.
 
-#### `exec-approvals.json` — per-host allowlists
+#### `exec-approvals.json` per-host allowlists
 
 The `allowlist` field in `exec-approvals.json` supports a per-host map format in addition to the legacy flat array format.
 
