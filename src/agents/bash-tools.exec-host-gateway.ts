@@ -87,6 +87,18 @@ export async function processGatewayAllowlist(
   });
   // Resolve the allowlist for the specific host (falls back to "default" / flat list).
   const hostAllowlist = resolveAllowlistForHost(approvals, effectiveHost);
+
+  // Short-circuit: when the sandbox has a bare wildcard "*", skip shell analysis entirely.
+  // Shell analysis resolves binary paths on the host filesystem, but sandbox commands use
+  // container paths (e.g. /workspace/...) that don't exist on the host — causing false
+  // "allowlist miss" rejections even though the wildcard should allow everything.
+  if (
+    effectiveHost === "sandbox" &&
+    hostAllowlist.some((e) => e.pattern?.trim() === "*")
+  ) {
+    return { execCommandOverride: undefined };
+  }
+
   const allowlistEval = evaluateShellAllowlist({
     command: params.command,
     allowlist: hostAllowlist,
